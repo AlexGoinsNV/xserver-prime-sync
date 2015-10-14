@@ -349,7 +349,22 @@ typedef Bool (*StartPixmapTrackingProcPtr)(PixmapPtr, PixmapPtr,
                                            int dst_x, int dst_y,
                                            Rotation rotation);
 
+typedef Bool (*StartFlippingPixmapTrackingProcPtr)(PixmapPtr,
+                                                   PixmapPtr, PixmapPtr,
+                                                   int x, int y,
+                                                   int dst_x, int dst_y,
+                                                   Rotation rotation);
+
+typedef void (*PresentTrackedFlippingPixmapProcPtr)(PixmapPtr);
+
 typedef Bool (*StopPixmapTrackingProcPtr)(PixmapPtr, PixmapPtr);
+
+typedef Bool (*StopFlippingPixmapTrackingProcPtr)(PixmapPtr,
+                                                  PixmapPtr, PixmapPtr);
+
+typedef Bool (*InitSharedPixmapFlippingProcPtr)(void *);
+
+typedef void (*FiniSharedPixmapFlippingProcPtr)(void *);
 
 typedef Bool (*ReplaceScanoutPixmapProcPtr)(DrawablePtr, PixmapPtr, Bool);
 
@@ -601,8 +616,15 @@ typedef struct _Screen {
     SharePixmapBackingProcPtr SharePixmapBacking;
     SetSharedPixmapBackingProcPtr SetSharedPixmapBacking;
 
+    InitSharedPixmapFlippingProcPtr InitSharedPixmapFlipping;
+    FiniSharedPixmapFlippingProcPtr FiniSharedPixmapFlipping;
+
     StartPixmapTrackingProcPtr StartPixmapTracking;
     StopPixmapTrackingProcPtr StopPixmapTracking;
+
+    StartFlippingPixmapTrackingProcPtr StartFlippingPixmapTracking;
+    PresentTrackedFlippingPixmapProcPtr PresentTrackedFlippingPixmap;
+    StopFlippingPixmapTrackingProcPtr StopFlippingPixmapTracking;
 
     struct xorg_list pixmap_dirty_list;
     struct xorg_list offload_slave_list;
