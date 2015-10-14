@@ -221,6 +221,118 @@ drmmode_SetSlaveBO(PixmapPtr ppix,
     return TRUE;
 }
 
+struct page_flip_event_args {
+    PixmapPtr frontTarget;
+    PixmapPtr backTarget;
+    xf86CrtcPtr crtc;
+    drmmode_ptr drmmode;
+};
+static void
+drmmode_SharedPixmapPageFlipEventHandler(uint64_t frame, uint64_t usec,
+                                         void *data)
+{
+    struct page_flip_event_args *args = data;
+
+    RRCrtcPtr randr_crtc = args->crtc->randr_crtc;
+
+    ScreenPtr slave  = randr_crtc->pScreen,
+              master = slave->current_master;
+
+    if (randr_crtc->scanout_pixmap && randr_crtc->scanout_pixmap_back) {
+        // frontTarget is being displayed, update crtc to reflect
+        randr_crtc->scanout_pixmap = args->frontTarget;
+        randr_crtc->scanout_pixmap_back = args->backTarget;
+
+        // Replace stale fence on frontTarget
+        drmmode_SetupPageFlipFence(args->frontTarget, args->backTarget,
+                                   args->crtc, args->drmmode);
+
+        // Safe to present on backTarget, no longer displayed
+        master->PresentTrackedFlippingPixmap(args->backTarget);
+    }
+
+    free(args);
+}
+
+static void
+drmmode_SharedPixmapPageFlipEventAbort(void *data)
+{
+    struct page_flip_event_args *args = data;
+
+    msGetPixmapPriv(args->drmmode, args->frontTarget)->flipSeq = 0;
+
+    free(args);
+}
+
+Bool
+drmmode_SetupPageFlipFence(PixmapPtr frontTarget, PixmapPtr backTarget,
+                           xf86CrtcPtr crtc, drmmode_ptr drmmode)
+{
+    drmmode_crtc_private_ptr drmmode_crtc = crtc->driver_private;
+
+    msPixmapPrivPtr ppriv = msGetPixmapPriv(drmmode, frontTarget);
+
+    struct page_flip_event_args *event_args;
+
+    // Setup page flip event handler params
+    event_args = malloc(sizeof(*event_args));
+    if (!event_args)
+        return FALSE;
+
+    *event_args = (struct page_flip_event_args) {
+        .frontTarget = frontTarget,
+        .backTarget = backTarget,
+        .crtc = crtc,
+        .drmmode = drmmode,
+    };
+
+    // Register event handler with modesetting event handler queue
+    ppriv->flipSeq =
+        ms_drm_queue_alloc(crtc, event_args,
+                           drmmode_SharedPixmapPageFlipEventHandler,
+                           drmmode_SharedPixmapPageFlipEventAbort);
+
+    // Schedule page flip to frontTarget on fence signal, raising event
+    if (drmPrimePageFlip(drmmode->fd, ppriv->backing_bo->handle,
+                         drmmode_crtc->mode_crtc->crtc_id, ppriv->fb_id,
+                         DRM_MODE_PAGE_FLIP_EVENT,
+                         (void *)(intptr_t) ppriv->flipSeq) < 0) {
+        ms_drm_abort_seq(crtc->scrn, ppriv->flipSeq);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+Bool
+drmmode_InitSharedPixmapFlipping(xf86CrtcPtr crtc, drmmode_ptr drmmode)
+{
+    // Setup PRIME page flip fence / page flip event handler for both pixmaps
+    return drmmode_SetupPageFlipFence(crtc->randr_crtc->scanout_pixmap,
+                                      crtc->randr_crtc->scanout_pixmap_back,
+                                      crtc, drmmode) &&
+           drmmode_SetupPageFlipFence(crtc->randr_crtc->scanout_pixmap_back,
+                                      crtc->randr_crtc->scanout_pixmap,
+                                      crtc, drmmode);
+}
+
+void
+drmmode_FiniSharedPixmapFlipping(xf86CrtcPtr crtc, drmmode_ptr drmmode)
+{
+    uint32_t seq;
+
+    // Abort page flip event handler on scanout_pixmap
+    seq = msGetPixmapPriv(drmmode, crtc->randr_crtc->scanout_pixmap)->flipSeq;
+    if (seq)
+        ms_drm_abort_seq(crtc->scrn, seq);
+
+    // Abort page flip event handler on scanout_pixmap_back
+    seq = msGetPixmapPriv(drmmode,
+                          crtc->randr_crtc->scanout_pixmap_back)->flipSeq;
+    if (seq)
+        ms_drm_abort_seq(crtc->scrn, seq);
+}
+
 static void
 drmmode_ConvertFromKMode(ScrnInfoPtr scrn,
                          drmModeModeInfo * kmode, DisplayModePtr mode)

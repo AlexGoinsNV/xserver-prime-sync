@@ -1078,6 +1078,38 @@ msSetSharedPixmapBacking(PixmapPtr ppix, void *fd_handle)
 }
 
 static Bool
+msInitSharedPixmapFlipping(void *crtcDevPrivate)
+{
+    xf86CrtcPtr crtc = crtcDevPrivate;
+
+    if (crtc->randr_crtc->scanout_pixmap &&
+         crtc->randr_crtc->scanout_pixmap_back) {
+        ScreenPtr screen = crtc->randr_crtc->scanout_pixmap->drawable.pScreen;
+        ScrnInfoPtr scrn = xf86ScreenToScrn(screen);
+        modesettingPtr ms = modesettingPTR(scrn);
+
+        return drmmode_InitSharedPixmapFlipping(crtc, &ms->drmmode);
+    }
+
+    return FALSE;
+}
+
+static void
+msFiniSharedPixmapFlipping(void *crtcDevPrivate)
+{
+    xf86CrtcPtr crtc = crtcDevPrivate;
+
+    if (crtc->randr_crtc->scanout_pixmap &&
+         crtc->randr_crtc->scanout_pixmap_back) {
+        ScreenPtr screen = crtc->randr_crtc->scanout_pixmap->drawable.pScreen;
+        ScrnInfoPtr scrn = xf86ScreenToScrn(screen);
+        modesettingPtr ms = modesettingPTR(scrn);
+
+        drmmode_FiniSharedPixmapFlipping(crtc, &ms->drmmode);
+    }
+}
+
+static Bool
 SetMaster(ScrnInfoPtr pScrn)
 {
     modesettingPtr ms = modesettingPTR(pScrn);
@@ -1216,6 +1248,9 @@ ScreenInit(ScreenPtr pScreen, int argc, char **argv)
     pScreen->SetSharedPixmapBacking = msSetSharedPixmapBacking;
     pScreen->StartPixmapTracking = PixmapStartDirtyTracking;
     pScreen->StopPixmapTracking = PixmapStopDirtyTracking;
+
+    pScreen->InitSharedPixmapFlipping = msInitSharedPixmapFlipping;
+    pScreen->FiniSharedPixmapFlipping = msFiniSharedPixmapFlipping;
 
     if (!xf86CrtcScreenInit(pScreen))
         return FALSE;
