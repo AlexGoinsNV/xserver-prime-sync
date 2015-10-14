@@ -388,16 +388,23 @@ RRCrtcDetachScanoutPixmap(RRCrtcPtr crtc)
 
     if (crtc->scanout_pixmap) {
         if (crtc->scanout_pixmap_back) {
-            crtc->pScreen->FiniSharedPixmapFlipping(crtc->devPrivate);
+            if (crtc->scanoutFlipping) {
+                crtc->pScreen->FiniSharedPixmapFlipping(crtc->devPrivate);
+                crtc->scanoutFlipping = FALSE;
+            }
 
-            master->StopFlippingPixmapTracking(mscreenpix,
-                                               crtc->scanout_pixmap,
-                                               crtc->scanout_pixmap_back);
+            if (crtc->scanoutTracking) {
+                master->StopFlippingPixmapTracking(mscreenpix,
+                                                   crtc->scanout_pixmap,
+                                                   crtc->scanout_pixmap_back);
+                crtc->scanoutTracking = FALSE;
+            }
 
             rrDestroySharedPixmap(crtc, crtc->scanout_pixmap_back);
             crtc->scanout_pixmap_back = NULL;
-        } else {
+        } else if (crtc->scanoutTracking) {
             master->StopPixmapTracking(mscreenpix, crtc->scanout_pixmap);
+            crtc->scanoutTracking = FALSE;
         }
 
         rrDestroySharedPixmap(crtc, crtc->scanout_pixmap);
@@ -518,11 +525,16 @@ rrSetupPixmapSharing(RRCrtcPtr crtc, int width, int height,
 
         crtc->scanout_pixmap_back = spix_back;
 
-        crtc->pScreen->InitSharedPixmapFlipping(crtc->devPrivate);
+        // Can fail if kernel doesn't support DRM_IOCTL_PRIME_PAGE_FLIP
+        if (!crtc->pScreen->InitSharedPixmapFlipping(crtc->devPrivate)) {
+            goto nosync;
+        }
+        crtc->scanoutFlipping = TRUE;
 
         master->StartFlippingPixmapTracking(mscreenpix,
                                             spix_front, spix_back,
                                             x, y, 0, 0, rotation);
+        crtc->scanoutTracking = TRUE;
 
         // Do a present to get things started. Sink driver will be responsible
         // for future calls to master->PresentTrackedFlippingPixmap().
@@ -534,9 +546,13 @@ rrSetupPixmapSharing(RRCrtcPtr crtc, int width, int height,
 nosync:
     if (sync) { // Wanted sync, didn't get it
         ErrorF("randr: falling back to unsynchronized pixmap sharing\n");
+
+        // Try again without syncing, clean slate
+        return rrSetupPixmapSharing(crtc, width, height, x, y, rotation, FALSE);
     }
 
     master->StartPixmapTracking(mscreenpix, spix_front, x, y, 0, 0, rotation);
+    crtc->scanoutTracking = TRUE;
 
     return TRUE;
 }

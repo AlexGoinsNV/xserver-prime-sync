@@ -131,6 +131,9 @@ struct _rrCrtc {
 
     PixmapPtr scanout_pixmap;
     PixmapPtr scanout_pixmap_back;
+
+    Bool scanoutFlipping;
+    Bool scanoutTracking;
 };
 
 struct _rrOutput {
