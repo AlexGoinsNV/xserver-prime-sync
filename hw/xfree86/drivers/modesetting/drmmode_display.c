@@ -742,11 +742,13 @@ drmmode_set_scanout_pixmap_cpu(xf86CrtcPtr crtc, PixmapPtr ppix)
         if (crtc->randr_crtc->scanout_pixmap) {
             ppriv = msGetPixmapPriv(drmmode, crtc->randr_crtc->scanout_pixmap);
             drmModeRmFB(drmmode->fd, ppriv->fb_id);
+            dumb_bo_destroy(drmmode->fd, ppriv->backing_bo);
 
             if (crtc->randr_crtc->scanout_pixmap_back) {
                 ppriv = msGetPixmapPriv(drmmode,
                                         crtc->randr_crtc->scanout_pixmap_back);
                 drmModeRmFB(drmmode->fd, ppriv->fb_id);
+                dumb_bo_destroy(drmmode->fd, ppriv->backing_bo);
             }
         }
         if (drmmode_crtc->slave_damage) {
