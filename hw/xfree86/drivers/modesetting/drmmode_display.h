@@ -115,6 +115,8 @@ typedef struct {
     /** @} */
 
     Bool need_modeset;
+
+    Bool enable_flipping;
 } drmmode_crtc_private_rec, *drmmode_crtc_private_ptr;
 
 typedef struct {
@@ -140,6 +142,7 @@ typedef struct {
 
 typedef struct _msPixmapPriv {
     uint32_t fb_id;
+    int flipSeq; /* seq of current page flip event handler */
     struct dumb_bo *backing_bo; /* if this pixmap is backed by a dumb bo */
 } msPixmapPrivRec, *msPixmapPrivPtr;
 
@@ -158,6 +161,10 @@ void *drmmode_map_slave_bo(drmmode_ptr drmmode, msPixmapPrivPtr ppriv);
 Bool drmmode_SetSlaveBO(PixmapPtr ppix,
                         drmmode_ptr drmmode,
                         int fd_handle, int pitch, int size);
+Bool drmmode_SharedPixmapFlip(PixmapPtr frontTarget, PixmapPtr backTarget,
+                              xf86CrtcPtr crtc, drmmode_ptr drmmode, Bool noflip);
+Bool drmmode_EnableSharedPixmapFlipping(xf86CrtcPtr crtc, drmmode_ptr drmmode);
+void drmmode_DisableSharedPixmapFlipping(xf86CrtcPtr crtc, drmmode_ptr drmmode);
 
 extern Bool drmmode_pre_init(ScrnInfoPtr pScrn, drmmode_ptr drmmode, int cpp);
 void drmmode_adjust_frame(ScrnInfoPtr pScrn, drmmode_ptr drmmode, int x, int y);
