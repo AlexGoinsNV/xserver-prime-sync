@@ -25,6 +25,8 @@
 #include "randrstr.h"
 #include "swaprep.h"
 
+#include <X11/Xatom.h>
+
 RESTYPE RRProviderType;
 
 /*
@@ -277,6 +279,46 @@ ProcRRGetProviderInfo (ClientPtr client)
     return Success;
 }
 
+static void
+RRInitPrimeSyncProps(ScreenPtr pScreen)
+{
+    rrScrPrivPtr pScrPriv = rrGetScrPriv(pScreen);
+
+    const char *syncStr = PRIME_SYNC_PROP;
+    Atom syncProp = MakeAtom(syncStr, strlen(syncStr), TRUE);
+
+    int defaultVal = TRUE;
+    int validVals[2] = {FALSE, TRUE};
+
+    int i;
+    for (i = 0; i < pScrPriv->numOutputs; i++) {
+        if (!RRQueryOutputProperty(pScrPriv->outputs[i], syncProp)) {
+            RRConfigureOutputProperty(pScrPriv->outputs[i], syncProp,
+                                      TRUE, FALSE, FALSE,
+                                      2, &validVals[0]);
+            RRChangeOutputProperty(pScrPriv->outputs[i], syncProp, XA_INTEGER,
+                                   8, PropModeReplace, 1, &defaultVal,
+                                   FALSE, FALSE);
+        }
+    }
+}
+
+static void
+RRFiniPrimeSyncProps(ScreenPtr pScreen)
+{
+    rrScrPrivPtr pScrPriv = rrGetScrPriv(pScreen);
+    int i;
+
+    const char *syncStr = PRIME_SYNC_PROP;
+    Atom syncProp = MakeAtom(syncStr, strlen(syncStr), FALSE);
+    if (syncProp == None)
+        return;
+
+    for (i = 0; i < pScrPriv->numOutputs; i++) {
+        RRDeleteOutputProperty(pScrPriv->outputs[i], syncProp);
+    }
+}
+
 int
 ProcRRSetProviderOutputSource(ClientPtr client)
 {
@@ -303,6 +345,8 @@ ProcRRSetProviderOutputSource(ClientPtr client)
     pScrPriv = rrGetScrPriv(pScreen);
 
     pScrPriv->rrProviderSetOutputSource(pScreen, provider, source_provider);
+
+    RRInitPrimeSyncProps(pScreen);
 
     provider->changed = TRUE;
     RRSetChanged(pScreen);
@@ -377,6 +421,7 @@ RRProviderCreate(ScreenPtr pScreen, const char *name,
 void
 RRProviderDestroy (RRProviderPtr provider)
 {
+    RRFiniPrimeSyncProps(provider->pScreen);
     FreeResource (provider->id, 0);
 }
 
