@@ -322,6 +322,11 @@ drmmode_InitSharedPixmapFlipping(xf86CrtcPtr crtc, drmmode_ptr drmmode)
     if (!drmmode_crtc->enable_flipping)
         return FALSE;
 
+    if (drmmode_crtc->flipping_active)
+        return TRUE;
+
+    drmmode_crtc->flipping_active = TRUE;
+
     return drmmode_SharedPixmapFlip(crtc->randr_crtc->scanout_pixmap_back,
                                     crtc->randr_crtc->scanout_pixmap,
                                     crtc, drmmode, TRUE);
@@ -331,6 +336,12 @@ static void
 drmmode_FiniSharedPixmapFlipping(xf86CrtcPtr crtc, drmmode_ptr drmmode)
 {
     uint32_t seq;
+    drmmode_crtc_private_ptr drmmode_crtc = crtc->driver_private;
+
+    if (!drmmode_crtc->flipping_active)
+        return;
+
+    drmmode_crtc->flipping_active = FALSE;
 
     // Abort page flip event handler on scanout_pixmap
     seq = msGetPixmapPriv(drmmode, crtc->randr_crtc->scanout_pixmap)->flipSeq;
@@ -1241,12 +1252,22 @@ drmmode_output_dpms(xf86OutputPtr output, int mode)
     drmModeConnectorSetProperty(drmmode->fd, koutput->connector_id,
                                 drmmode_output->dpms_enum_id, mode);
 
-    if (mode == DPMSModeOn && crtc) {
+    if (crtc) {
         drmmode_crtc_private_ptr drmmode_crtc = crtc->driver_private;
-        if (drmmode_crtc->need_modeset)
-            drmmode_set_mode_major(crtc, &crtc->mode, crtc->rotation,
-                                   crtc->x, crtc->y);
+
+        if (mode == DPMSModeOn) {
+            if (drmmode_crtc->need_modeset)
+                drmmode_set_mode_major(crtc, &crtc->mode, crtc->rotation,
+                                       crtc->x, crtc->y);
+
+            if (drmmode_crtc->enable_flipping)
+                drmmode_InitSharedPixmapFlipping(crtc, drmmode_crtc->drmmode);
+        } else {
+            if (drmmode_crtc->enable_flipping)
+                drmmode_FiniSharedPixmapFlipping(crtc, drmmode_crtc->drmmode);
+        }
     }
+
     return;
 }
 
