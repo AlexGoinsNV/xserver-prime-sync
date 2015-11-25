@@ -439,8 +439,30 @@ rrCreateSharedPixmap(RRCrtcPtr crtc, ScreenPtr master,
 }
 
 static Bool
+rrPixmapSharingSyncProp(int numOutputs, RROutputPtr * outputs)
+{
+    /* Determine if the user wants prime syncing */
+    int o;
+    const char *syncStr = PRIME_SYNC_PROP;
+    Atom syncProp = MakeAtom(syncStr, strlen(syncStr), FALSE);
+    if (syncProp == None)
+        return TRUE;
+
+    for (o = 0; o < numOutputs; o++) {
+        RRPropertyValuePtr val;
+        if ((val = RRGetOutputProperty(outputs[o], syncProp, TRUE))) {
+            /* If one output doesn't want sync, no sync */
+            if(val->data && !(*(char *) val->data))
+                return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+static Bool
 rrSetupPixmapSharing(RRCrtcPtr crtc, int width, int height,
-                     int x, int y, Rotation rotation)
+                     int x, int y, Rotation rotation, Bool sync)
 {
     ScreenPtr master = crtc->pScreen->current_master;
     int depth;
@@ -481,7 +503,8 @@ rrSetupPixmapSharing(RRCrtcPtr crtc, int width, int height,
     crtc->scanout_pixmap = spix_front;
 
     /* Both source and sink must support required ABI funcs for flipping */
-    if (crtc->pScreen->EnableSharedPixmapFlipping &&
+    if (sync &&
+        crtc->pScreen->EnableSharedPixmapFlipping &&
         crtc->pScreen->DisableSharedPixmapFlipping &&
         master->StartFlippingPixmapTracking &&
         master->PresentTrackedFlippingPixmap &&
@@ -508,7 +531,8 @@ rrSetupPixmapSharing(RRCrtcPtr crtc, int width, int height,
     }
 
 nosync:
-    ErrorF("randr: falling back to unsynchronized pixmap sharing\n");
+    if (sync) /* Wanted sync, didn't get it */
+        ErrorF("randr: falling back to unsynchronized pixmap sharing\n");
 
     master->StartPixmapTracking(mscreenpix, spix_front, x, y, 0, 0, rotation);
 
@@ -669,7 +693,9 @@ RRCrtcSet(RRCrtcPtr crtc,
                 return FALSE;
 
             if (pScreen->current_master) {
-                ret = rrSetupPixmapSharing(crtc, width, height, x, y, rotation);
+                Bool sync = rrPixmapSharingSyncProp(numOutputs, outputs);
+                ret = rrSetupPixmapSharing(crtc, width, height,
+                                           x, y, rotation, sync);
             }
         }
 #if RANDR_12_INTERFACE
